@@ -1,11 +1,12 @@
 const express = require("express")
 const dotenv=require("dotenv").config()
 const connectDB =require("./config/db")
+const authRouter=require("./routes/auth.router")
 const app=express()
 app.use(express.json())
 const PORT=process.env.PORT
 
-
+app.use("/",authRouter);
 
 app.get("/",(req,res)=>{
     res.send("Server is live")
