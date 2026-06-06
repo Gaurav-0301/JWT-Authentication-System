@@ -14,7 +14,7 @@ app.get("/",(req,res)=>{
 })
 
 
-app.listen(PORT,(req,res)=>{
-    connectDB().then(
-        console.log(`Server is up and running on http://localhost:${PORT}`) )
-})
+app.listen(PORT, async () => {
+    await connectDB();
+    console.log(`Server is up and running on http://localhost:${PORT}`);
+});
