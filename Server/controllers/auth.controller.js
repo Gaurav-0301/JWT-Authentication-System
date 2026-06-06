@@ -39,7 +39,8 @@ const signUp=async(req,res)=>{
             const salt=10;
             const hashedPassword= await bcrypt.hash(password,salt);
 
-            const otp=0,x;
+            const otp=0;
+            var x;
             for(var i=0;i<=5;i++){
               x=Math.floor(Math.random()*10);
               otp=otp*10+x;

@@ -4,6 +4,7 @@ const connectDB =require("./config/db")
 const authRouter=require("./routes/auth.router")
 const app=express()
 app.use(express.json())
+
 const PORT=process.env.PORT
 
 app.use("/",authRouter);
