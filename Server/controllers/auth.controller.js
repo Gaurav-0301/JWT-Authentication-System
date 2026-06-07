@@ -1,4 +1,7 @@
 const user = require("../models/auth.model");
+const sessionModel=require("../models/session.model");
+const crypto = require("crypto");
+
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
@@ -105,15 +108,7 @@ const otpVerification = async (req, res) => {
                 message: "Otp verification failed",
             });
         }
-
-        const accessToken = jwt.sign(
-            { id: currentUser._id },
-            process.env.JWT_SECRET,
-            { expiresIn: "15m" }
-        );
-         
-
-        const refreshToken=jwt.sign(
+           const refreshToken=jwt.sign(
             {id:currentUser.id},
             process.env.JWT_SECRET,
             { expiresIn:"7d"}
@@ -125,6 +120,29 @@ const otpVerification = async (req, res) => {
             secure: process.env.NODE_ENV === "production",
             maxAge: 7 * 24 * 60 * 60 * 1000,
         });
+        
+        
+        const refreshTokenHash=await crypto.createHash("sha256").update(refreshToken).digest("hex")
+
+        const session=await sessionModel.create({
+            user:currentUser.id,
+            refreshTokenHash,
+            ip:req.ip,
+            userAgent:req.headers["user-agent"]
+
+
+        });
+
+        const accessToken = jwt.sign(
+            { id: currentUser._id,
+                sessionId:session._id
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "15m" }
+        );
+         
+
+     
 
         res.status(200).json({
             success: true,
@@ -190,12 +208,59 @@ const accessToken=async(req,res)=>{
 
 
 
-const profileEdit=async(req,res)=>{
-console.log("profileEdit")
-}
+
 
 const logout=async(req,res)=>{
-console.log("logout")
+try {
+    const {refreshToken}=req.cookies;
+
+    if(!refreshToken){
+        return res.status(400).json({
+           success:false,
+           message:"refreshToken nnot found"
+        });
+    }
+      
+       
+        const refreshTokenHash=await crypto.createHash("sha256").update(refreshToken).digest("hex")
+
+        const session=await sessionModel.findOne(
+           { 
+            refreshTokenHash,
+            revoked:false,
+        }
+        );
+     
+        if(!session){
+            return res.status(400).json({
+                success:false,
+                message:"session not found"
+            });
+        }
+            session.revoked=true;
+            await session.save();
+
+
+         res.clearCookie("refreshToken", {
+          httpOnly: true,
+        secure: process.env.NODE_ENV === "production"
+       });
+         
+        res.status(200).json({
+            success:true,
+            message:"logout successfully"
+        })
+    
+} catch (error) {
+    res.status(400).json({
+        success:false,
+        message:"Failed to logout "+error
+    })
+}
+}
+
+const profileEdit=async(req,res)=>{
+console.log("profileEdit")
 }
 
 module.exports={getMe,signUp,profileEdit,logout,otpVerification,accessToken};
