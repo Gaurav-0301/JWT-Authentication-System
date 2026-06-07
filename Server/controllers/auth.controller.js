@@ -2,19 +2,33 @@ const user = require("../models/auth.model");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
-const allUsers = async (req, res) => {
+const getMe= async (req, res) => {
     try {
-        const users = await user.find();
-        console.log(users);
+        const token=req.headers.authorization?.split(" ")[1];
+
+        if(!token){
+            return res.status(401).json({
+                status:false,
+                message:"failed to fetch the user"
+            });
+        }
+        const decoded=jwt.verify(token,process.env.JWT_SECRET);
+        const guest=await user.findById(decoded.id);
+
 
         res.status(200).json({
             success: true,
-            message: users,
+            message:"User fetch successfully",
+            userCredential:  {
+                userName:guest.userName,
+                email:guest.email,
+
+            },
         });
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: "Failed to fetching the users"+ error,
+            message: "Failed to fetching the users "+ error,
         });
     }
 };
@@ -26,7 +40,7 @@ const signUp = async (req, res) => {
         if (!userName || !email || !password) {
             return res.status(400).json({
                 success: false,
-                message: "All fields are required"+ error,
+                message: "All fields are required "+ error,
             });
         }
 
@@ -35,7 +49,7 @@ const signUp = async (req, res) => {
         if (isMatch) {
             return res.status(400).json({
                 success: false,
-                message: "Account already exist",
+                message: "Account already exist "+error
             });
         }
 
@@ -66,7 +80,7 @@ const signUp = async (req, res) => {
     } catch (error) {
         res.status(400).json({
             success: false,
-            message: "Failed to signup"+ error,
+            message: "Failed to signup "+ error,
         });
     }
 };
@@ -92,13 +106,21 @@ const otpVerification = async (req, res) => {
             });
         }
 
-        const token = jwt.sign(
+        const accessToken = jwt.sign(
             { id: currentUser._id },
             process.env.JWT_SECRET,
-            { expiresIn: "2d" }
+            { expiresIn: "15m" }
         );
+         
 
-        res.cookie("token", token, {
+        const refreshToken=jwt.sign(
+            {id:currentUser.id},
+            process.env.JWT_SECRET,
+            { expiresIn:"7d"}
+        );
+        
+        
+        res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             maxAge: 7 * 24 * 60 * 60 * 1000,
@@ -107,16 +129,65 @@ const otpVerification = async (req, res) => {
         res.status(200).json({
             success: true,
             message: "User signup successfully",
-            token,
+            accessToken,
         });
 
     } catch (error) {
         res.status(400).json({
             success: false,
-            message: "Failed to verify the otp"+ error,
+            message: "Failed to verify the otp "+ error,
         });
     }
 }
+
+const accessToken=async(req,res)=>{
+   try {
+    var {refreshToken}=req.cookies;
+
+    if(!refreshToken){
+        return res.status(400).json({
+            success:false,
+            message:"failed to fetch refreshToken"
+        });
+    }
+
+
+    const decoded=jwt.verify(
+        refreshToken,
+        process.env.JWT_SECRET
+    );
+
+
+    const accessToken=jwt.sign(
+        {id:decoded.id},
+        process.env.JWT_SECRET,
+        {expiresIn:"15m"}
+    );
+
+     const newRefreshToken=jwt.sign(
+        {id:decoded.id},
+        process.env.JWT_SECRET,
+        {expiresIn:"7d"}
+   );
+
+    res.cookie("refreshToken",newRefreshToken,{
+        httpOnly:true,
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+    res.status(201).json({
+        success:true,
+        message:"accessToken generated successfully",
+        accessToken,
+    });
+   } catch (error) {
+    res.status(400).json({
+        success:false,
+        message:"failed to generate the accessToken " + error
+    })
+   }
+}
+
 
 
 const profileEdit=async(req,res)=>{
@@ -127,4 +198,4 @@ const logout=async(req,res)=>{
 console.log("logout")
 }
 
-module.exports={allUsers,signUp,profileEdit,logout,otpVerification};
+module.exports={getMe,signUp,profileEdit,logout,otpVerification,accessToken};
