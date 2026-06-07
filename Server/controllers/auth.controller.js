@@ -108,7 +108,8 @@ const otpVerification = async (req, res) => {
                 message: "Otp verification failed",
             });
         }
-           const refreshToken=jwt.sign(
+       
+         const refreshToken=jwt.sign(
             {id:currentUser.id},
             process.env.JWT_SECRET,
             { expiresIn:"7d"}
@@ -122,7 +123,8 @@ const otpVerification = async (req, res) => {
         });
         
         
-        const refreshTokenHash=await crypto.createHash("sha256").update(refreshToken).digest("hex")
+        const refreshTokenHash=crypto.createHash("sha256").update(refreshToken).digest("hex");
+
 
         const session=await sessionModel.create({
             user:currentUser.id,
@@ -162,6 +164,20 @@ const accessToken=async(req,res)=>{
    try {
     var {refreshToken}=req.cookies;
 
+    const refreshTokenHash=crypto.createHash("sha256").update(refreshToken).digest("hex");
+
+        const session=await sessionModel.findOne({
+            refreshTokenHash,
+            revoked:false
+        })
+
+        if(!session){
+            return res.status(400).json({
+                success:false,
+                message:"session not found"
+            })
+        }
+
     if(!refreshToken){
         return res.status(400).json({
             success:false,
@@ -188,6 +204,12 @@ const accessToken=async(req,res)=>{
         {expiresIn:"7d"}
    );
 
+
+    var newRefreshTokenHash=crypto.createHash("sha256").update(newRefreshToken).digest("hex");;
+
+  session.refreshTokenHash=newRefreshTokenHash;
+  await session.save();
+     
     res.cookie("refreshToken",newRefreshToken,{
         httpOnly:true,
         secure: process.env.NODE_ENV === "production",
