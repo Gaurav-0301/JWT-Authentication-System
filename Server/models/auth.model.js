@@ -15,10 +15,11 @@ const authSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-     otp: {
-      type: String,
-      required: true,
-    },
+    isVerified:{
+      type:Boolean,
+      default:false,
+    }
+    
   },
   {
     timestamps: true,

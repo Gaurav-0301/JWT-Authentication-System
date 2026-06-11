@@ -1,9 +1,10 @@
 const user = require("../models/auth.model");
 const sessionModel=require("../models/session.model");
 const crypto = require("crypto");
-
+const otp=require("../utils/otp.util")
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const otpModel=require("../models/otp.model");
 
 const getMe= async (req, res) => {
     try {
@@ -12,13 +13,18 @@ const getMe= async (req, res) => {
         if(!token){
             return res.status(401).json({
                 status:false,
-                message:"failed to fetch the user"
+                message:"No token provided !!"
             });
         }
         const decoded=jwt.verify(token,process.env.JWT_SECRET);
         const guest=await user.findById(decoded.id);
 
-
+        if(!guest){
+            return res.status(404).json({
+                success:false,
+                message:"user not found"
+            })
+        }
         res.status(200).json({
             success: true,
             message:"User fetch successfully",
@@ -43,7 +49,7 @@ const signUp = async (req, res) => {
         if (!userName || !email || !password) {
             return res.status(400).json({
                 success: false,
-                message: "All fields are required "+ error,
+                message: "All fields are required "
             });
         }
 
@@ -52,38 +58,37 @@ const signUp = async (req, res) => {
         if (isMatch) {
             return res.status(400).json({
                 success: false,
-                message: "Account already exist "+error
+                message: "Account already exist with this eamil",
             });
         }
 
         const salt = 10;
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        let otp = 0;
-
-        for (let i = 0; i < 6; i++) {
-
-            otp = otp * 10 + Math.floor(Math.random() * 10);
-        }
-
-        console.log(otp);
-
-        await user.create({
+            const newUser=await user.create({
             userName,
             email,
             password: hashedPassword,
-            otp,
+            isVerified:false,
+           
         });
+
+         var generatedOtp=otp();
+         const activeOtp=await otpModel.create({
+            id:newUser._id,
+            otp:generatedOtp,
+         })
 
         res.status(200).json({
             success: true,
-            message: "Please Check The Mail Inbox",
+            message: "Please Check The Mail Inbox for OTP vaild for 10 minutes",
+            user_id:newUser._id,
         });
 
     } catch (error) {
-        res.status(400).json({
+        res.status(500).json({
             success: false,
-            message: "Failed to signup "+ error,
+            message: "Failed to signup "+ error.message,
         });
     }
 };
@@ -102,7 +107,7 @@ const login=async(req,res)=>{
             if(!currentUser){
                 return res.status(400).json({
                     success:false,
-                    message:"user not found"
+                    message:"Invalid user credentials"
                 });
             }
 
@@ -110,22 +115,19 @@ const login=async(req,res)=>{
             if(!isMatch){
                 return res.status(400).json({
                     success:false,
-                    message:"Invalid password"
+                    message:"Invalid credentials"
                 })
             }
 
-               let otp = 0;
-
-        for (let i = 0; i < 6; i++) {
-
-            otp = otp * 10 + Math.floor(Math.random() * 10);
-        }
-
-        console.log(otp);
+        var generatedOtp=otp();
+         const activeOtp=await otpModel.create({
+            id:currentUser._id,
+            otp:generatedOtp,
+         })
 
             res.status(201).json({
                 success:true,
-                message:"Login successfully"
+                message:"verification OTP is send.Please verify"
             })
        
     } catch (error) {
@@ -141,21 +143,35 @@ const otpVerification = async (req, res) => {
         const { id } = req.params;
         const { otp } = req.body;
 
-        const currentUser = await user.findById(id);
+        const activeOtp = await otpModel.findById(id);
+        const currentUser=await user.findById(id);
 
-        if (!currentUser) {
+        if (!activeOtp) {
             return res.status(404).json({
                 success: false,
-                message: "User not found",
+                message: "Invalid Request",
             });
         }
-
-        if (currentUser.otp != otp) {
+        
+        if(Datre.now>new Date(activeOtp.otpExpiresAt).getTime()){
+            return res.status(400).json({
+                success:false,
+                message:"OTP has expired !!"
+            });
+        }
+        if (activeOtp.otp != otp) {
             return res.status(400).json({
                 success: false,
-                message: "Otp verification failed",
+                message: "Incorrect OTP",
             });
         }
+        
+        activeOtp.otp=null;
+        activeOtp.otpExpiresAt=null;
+        await otpModel.save();
+
+        currentUser.isVerified=true;
+        await user.save();
        
          const refreshToken=jwt.sign(
             {id:currentUser.id},
@@ -211,7 +227,12 @@ const otpVerification = async (req, res) => {
 const accessToken=async(req,res)=>{
    try {
     var {refreshToken}=req.cookies;
-
+   if(!refreshToken){
+    return res.status(401).json({
+        success:false,
+        message:"refreshToken is missing."
+    });
+   }
     const refreshTokenHash=crypto.createHash("sha256").update(refreshToken).digest("hex");
 
         const session=await sessionModel.findOne({
@@ -223,18 +244,12 @@ const accessToken=async(req,res)=>{
             return res.status(400).json({
                 success:false,
                 message:"session not found"
-            })
+            });
         }
+            session.revoked=true;
+            await session.save();
 
-    if(!refreshToken){
-        return res.status(400).json({
-            success:false,
-            message:"failed to fetch refreshToken"
-        });
-    }
-
-
-    const decoded=jwt.verify(
+     const decoded=jwt.verify(
         refreshToken,
         process.env.JWT_SECRET
     );
@@ -287,7 +302,7 @@ try {
     if(!refreshToken){
         return res.status(400).json({
            success:false,
-           message:"refreshToken nnot found"
+           message:"No Active refreshToken found"
         });
     }
       
@@ -318,19 +333,17 @@ try {
          
         res.status(200).json({
             success:true,
-            message:"logout successfully"
+            message:"Logout successfully"
         })
     
 } catch (error) {
     res.status(400).json({
         success:false,
-        message:"Failed to logout "+error
+        message:"Failed to Logout "+error
     })
 }
 }
 
-const profileEdit=async(req,res)=>{
-console.log("profileEdit")
-}
 
-module.exports={getMe,signUp,profileEdit,logout,otpVerification,accessToken,login};
+
+module.exports={getMe,signUp,logout,otpVerification,accessToken,login};
