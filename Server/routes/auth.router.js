@@ -7,7 +7,7 @@ authRouter.post("/auth/getMe",getMe);
 authRouter.post("/auth/signUp",signUp);
 authRouter.post("/auth/login",login);
 
-authRouter.get("/auth/logout",logout);
+authRouter.get("/auth/logout/:id",logout);
 authRouter.post("/auth/otpverify/:id",otpVerification);
 authRouter.post("/auth/accessToken",accessToken);
 

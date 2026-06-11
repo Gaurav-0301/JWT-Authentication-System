@@ -5,7 +5,7 @@ const otp=require("../utils/otp.util")
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const otpModel=require("../models/otp.model");
-
+const sendOtpMail=require("../utils/email.util")
 const getMe= async (req, res) => {
     try {
         const token=req.headers.authorization?.split(" ")[1];
@@ -74,11 +74,15 @@ const signUp = async (req, res) => {
         });
 
          var generatedOtp=otp();
-         const activeOtp=await otpModel.create({
-            id:newUser._id,
-            otp:generatedOtp,
-         })
+         const hashedOtp=await bcrypt.hash(generatedOtp,10);
+         console.log(generatedOtp);
+         await sendOtpMail(email,generatedOtp);
 
+         const activeOtp=await otpModel.create({
+            userId:newUser._id,
+            otp:hashedOtp,
+         })
+         
         res.status(200).json({
             success: true,
             message: "Please Check The Mail Inbox for OTP vaild for 10 minutes",
@@ -120,9 +124,11 @@ const login=async(req,res)=>{
             }
 
         var generatedOtp=otp();
+        const hashedOtp=await bcrypt.hash(generatedOtp,10);
+        await sendOtpMail(email,generatedOtp);
          const activeOtp=await otpModel.create({
-            id:currentUser._id,
-            otp:generatedOtp,
+            userId:currentUser._id,
+            otp:hashedOtp,
          })
 
             res.status(201).json({
@@ -143,35 +149,37 @@ const otpVerification = async (req, res) => {
         const { id } = req.params;
         const { otp } = req.body;
 
-        const activeOtp = await otpModel.findById(id);
+        const activeOtp = await otpModel.findOne({ userId:id });
         const currentUser=await user.findById(id);
 
-        if (!activeOtp) {
+        if (!activeOtp || !currentUser) {
             return res.status(404).json({
                 success: false,
-                message: "Invalid Request",
+                message: "Invalid Request"
             });
         }
-        
-        if(Datre.now>new Date(activeOtp.otpExpiresAt).getTime()){
-            return res.status(400).json({
+        const otpCreatedAt=new Date(activeOtp.createdAt()).getTime();
+        const otpValidTime=10*60*1000;
+        if(Date.now>(otpCreatedAt+otpValidTime)){
+            await otpModel.deleteOne({userId:id});
+             return res.status(400).json({
                 success:false,
                 message:"OTP has expired !!"
             });
         }
-        if (activeOtp.otp != otp) {
+       
+        const isMatch= await bcrypt.compare(otp,activeOtp.otp);
+        if (!isMatch) {
             return res.status(400).json({
                 success: false,
                 message: "Incorrect OTP",
             });
         }
         
-        activeOtp.otp=null;
-        activeOtp.otpExpiresAt=null;
-        await otpModel.save();
+       await otpModel.deleteOne({userId:id});
 
         currentUser.isVerified=true;
-        await user.save();
+        await currentUser.save();
        
          const refreshToken=jwt.sign(
             {id:currentUser.id},
@@ -298,7 +306,7 @@ const accessToken=async(req,res)=>{
 const logout=async(req,res)=>{
 try {
     const {refreshToken}=req.cookies;
-
+    const {id}=req.params;
     if(!refreshToken){
         return res.status(400).json({
            success:false,
@@ -306,7 +314,7 @@ try {
         });
     }
       
-       
+       const currentUser=await user.findOne({id});
         const refreshTokenHash=await crypto.createHash("sha256").update(refreshToken).digest("hex")
 
         const session=await sessionModel.findOne(
@@ -324,6 +332,9 @@ try {
         }
             session.revoked=true;
             await session.save();
+
+            currentUser.isVerified=false;
+            await currentUser.save();
 
 
          res.clearCookie("refreshToken", {

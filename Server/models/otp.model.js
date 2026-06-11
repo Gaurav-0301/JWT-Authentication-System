@@ -1,7 +1,7 @@
 const mongoose=require("mongoose");
 const user=require("./auth.model")
 const otpSchema=new mongoose.Schema({
-   user:{
+   userId:{
           type:mongoose.Schema.Types.ObjectId,
           ref:"users",
           required:true
@@ -12,7 +12,7 @@ const otpSchema=new mongoose.Schema({
   },
   createdAt:{
     type:Date,
-    default:date.now,
+    default:Date.now,
     expire:600,
   }
 },
