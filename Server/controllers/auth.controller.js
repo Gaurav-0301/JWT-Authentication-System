@@ -88,6 +88,54 @@ const signUp = async (req, res) => {
     }
 };
 
+const login=async(req,res)=>{
+    try {
+        const {email,password}=req.body;
+        if(!email || !password){
+            return res.status(400).json({
+                success:false,
+                message:"All field are required"
+            });
+        }
+
+            const currentUser=await user.findOne({email});
+            if(!currentUser){
+                return res.status(400).json({
+                    success:false,
+                    message:"user not found"
+                });
+            }
+
+            const isMatch = await bcrypt.compare(password, currentUser.password);
+            if(!isMatch){
+                return res.status(400).json({
+                    success:false,
+                    message:"Invalid password"
+                })
+            }
+
+               let otp = 0;
+
+        for (let i = 0; i < 6; i++) {
+
+            otp = otp * 10 + Math.floor(Math.random() * 10);
+        }
+
+        console.log(otp);
+
+            res.status(201).json({
+                success:true,
+                message:"Login successfully"
+            })
+       
+    } catch (error) {
+        res.status(400).json({
+            success:false,
+            message:"Failed to login "+ error
+        })
+    }
+}
+
 const otpVerification = async (req, res) => {
     try {
         const { id } = req.params;
@@ -285,4 +333,4 @@ const profileEdit=async(req,res)=>{
 console.log("profileEdit")
 }
 
-module.exports={getMe,signUp,profileEdit,logout,otpVerification,accessToken};
+module.exports={getMe,signUp,profileEdit,logout,otpVerification,accessToken,login};
